@@ -13,14 +13,25 @@ app = FastAPI()
 async def process_document_api(
     file: UploadFile,
     uploaded_by: str = Form(...),
-    project: str = Form(...)
 ):
-    result = await process_document(file, {"uploaded_by": uploaded_by, "project": project})
+    result = await process_document(file, {"uploaded_by": uploaded_by})
     return {"status": "success", "summary": result["summary"]}
 
 
 @app.get("/query")
 def query_knowledge_base(query: str):
+    # Check if vectorstore has any data by searching with the actual query
+    try:
+        # Search for documents similar to the user's question
+        # This uses semantic similarity to find relevant content
+        relevant_docs = vectorstore.similarity_search(query, k=5)
+        if not relevant_docs:
+            return {"answer": "I don't know"}
+            
+    except Exception:
+        # If there's an error accessing the vectorstore, it's likely empty
+        return {"answer": "I don't know"}
+    
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
     qa_chain = RetrievalQA.from_chain_type(
         llm=ChatOpenAI(model="gpt-4o-mini", temperature=0.7),
