@@ -20,6 +20,9 @@ async def process_document_api(
     return {"status": "success", "summary": result["summary"]}
 
 
+# Semaphore to limit concurrent file processing (prevent CPU thrashing)
+_concurrency_limit = asyncio.Semaphore(3)
+
 @app.post("/process-documents")
 async def process_documents_api(
     files: List[UploadFile] = File(...),
@@ -28,16 +31,24 @@ async def process_documents_api(
     if not files:
         raise HTTPException(status_code=400, detail="No files provided. Use the 'files' field and select one or more.")
 
-    tasks = [
-        process_document(f, {"uploaded_by": uploaded_by})
-        for f in files
-    ]
-    results = await asyncio.gather(*tasks)
-    response_items = [
-        {"filename": f.filename, "summary": r["summary"]}
-        for f, r in zip(files, results)
-    ]
-    return {"status": "success", "results": response_items}
+    async def process_with_limit(file):
+        async with _concurrency_limit:
+            try:
+                # Add per-file timeout (60 seconds)
+                result = await asyncio.wait_for(
+                    process_document(file, {"uploaded_by": uploaded_by}),
+                    timeout=60.0
+                )
+                return {"filename": file.filename, "summary": result["summary"], "status": "success"}
+            except asyncio.TimeoutError:
+                return {"filename": file.filename, "error": "Processing timeout (>60s)", "status": "error"}
+            except Exception as e:
+                return {"filename": file.filename, "error": str(e), "status": "error"}
+
+    # Process files with bounded concurrency and error handling
+    results = await asyncio.gather(*[process_with_limit(f) for f in files])
+    
+    return {"status": "success", "results": results}
 
 
 @app.get("/query")
