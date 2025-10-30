@@ -56,7 +56,7 @@ def query_knowledge_base(query: str):
     
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
     qa_chain = RetrievalQA.from_chain_type(
-        llm=ChatOpenAI(model="gpt-4o-mini", temperature=0.7),
+        llm=ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7),
         retriever=retriever
     )
     return {"answer": qa_chain.run(query)}
