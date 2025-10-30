@@ -1,9 +1,11 @@
 import os
-from fastapi import FastAPI, UploadFile, Form
+from typing import List
+from fastapi import FastAPI, UploadFile, Form, File, HTTPException
 from app.services.document_processor import process_document
 from app.services.vectorstore import vectorstore
 from langchain_openai import ChatOpenAI
 from langchain_classic.chains import RetrievalQA
+import asyncio
 
 
 app = FastAPI()
@@ -16,6 +18,26 @@ async def process_document_api(
 ):
     result = await process_document(file, {"uploaded_by": uploaded_by})
     return {"status": "success", "summary": result["summary"]}
+
+
+@app.post("/process-documents")
+async def process_documents_api(
+    files: List[UploadFile] = File(...),
+    uploaded_by: str = Form(...),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided. Use the 'files' field and select one or more.")
+
+    tasks = [
+        process_document(f, {"uploaded_by": uploaded_by})
+        for f in files
+    ]
+    results = await asyncio.gather(*tasks)
+    response_items = [
+        {"filename": f.filename, "summary": r["summary"]}
+        for f, r in zip(files, results)
+    ]
+    return {"status": "success", "results": response_items}
 
 
 @app.get("/query")
